@@ -2,56 +2,67 @@
   {
     "name": "Decipher Brewing",
     "address": "1740 Broadway St, Charlottesville, VA 22902",
-    "untappd_url": "https://untappd.com/DecipherBrewing"
+    "untappd_url": "https://untappd.com/DecipherBrewing",
+    "brewery_url": "https://decipherbrewingco.wixsite.com/mysite-1"
   },
   {
     "name": "Högwaller Brewing",
     "address": "1518 E High St, Charlottesville, VA 22902",
-    "untappd_url": "https://untappd.com/v/hoegwaller-brewing/12224004"
+    "untappd_url": "https://untappd.com/v/hoegwaller-brewing/12224004",
+    "brewery_url": "https://www.hogwallerbrewing.com"
   },
   {
     "name": "James River Brewing Company",
     "address": "561 Valley St, Scottsville, VA 24590",
-    "untappd_url": "https://untappd.com/JamesRiverBrewery"
+    "untappd_url": "https://untappd.com/JamesRiverBrewery",
+    "brewery_url": "https://jrbrewery.com"
   },
   {
     "name": "Pro Re Nata",
     "address": "6135 Rockfish Gap Turnpike, Crozet, VA 22932",
-    "untappd_url": "https://untappd.com/ProReNataBrewery"
+    "untappd_url": "https://untappd.com/ProReNataBrewery",
+    "brewery_url": "https://prnbrewery.com"
   },
   {
     "name": "Random Row Brewing Co.",
     "address": "608 Preston Ave., Charlottesville, VA 22903",
-    "untappd_url": "https://untappd.com/RandomRowBrewingCo"
+    "untappd_url": "https://untappd.com/RandomRowBrewingCo",
+    "brewery_url": "https://randomrow.com"
   },
   {
     "name": "Selvedge Brewing",
     "address": "2415 Ivy Road, Ste 190, Charlottesville, VA 22903",
-    "untappd_url": "https://untappd.com/SelvedgeBrewing"
+    "untappd_url": "https://untappd.com/SelvedgeBrewing",
+    "brewery_url": "https://www.selvedgebrewing.com"
   },
   {
     "name": "South Street Brewery",
     "address": "106 West South St, Charlottesville, VA 22902",
-    "untappd_url": "https://untappd.com/SouthStreetBrewery"
+    "untappd_url": "https://untappd.com/SouthStreetBrewery",
+    "brewery_url": "https://www.southstreetbrewery.com"
   },
   {
     "name": "Starr Hill Brewery (Crozet)",
     "address": "5391 Three Notch’d Rd, Crozet, VA 22932",
-    "untappd_url": "https://untappd.com/StarrHillBrewing"
+    "untappd_url": "https://untappd.com/StarrHillBrewing",
+    "brewery_url": "https://starrhill.com"
   },
   {
     "name": "Starr Hill Brewery Downtown",
     "address": "946 Grady Ave, Charlottesville, VA 22903",
-    "untappd_url": "https://untappd.com/StarrHillBrewing"
+    "untappd_url": "https://untappd.com/StarrHillBrewing",
+    "brewery_url": "https://starrhill.com"
   },
   {
     "name": "SuperFly Brewing Co.",
     "address": "943 Preston Ave, Suite 2, Charlottesville, VA 22903",
-    "untappd_url": "https://untappd.com/SuperFlyBrewingCo"
+    "untappd_url": "https://untappd.com/SuperFlyBrewingCo",
+    "brewery_url": "https://superflybrewing.com"
   },
   {
     "name": "Three Notch’d Brewing Company",
     "address": "520 2nd St SE, Charlottesville, VA 22902",
-    "untappd_url": "https://untappd.com/ThreeNotchdBrewing"
+    "untappd_url": "https://untappd.com/ThreeNotchdBrewing",
+    "brewery_url": "https://threenotchdbrewing.com"
   }
 ]
