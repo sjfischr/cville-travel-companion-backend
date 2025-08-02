@@ -160,11 +160,11 @@ def get_breweries(name: str = None, location: dict = None):
         # Get Google Places breweries
         google_breweries = get_google_places_breweries(lat, lng)
         
-        # Add distance to local breweries (using approximate lat/lng for Charlottesville area)
-        cville_center = (38.0293, -78.4767)  # Approximate center of Charlottesville
+        # Add distance to local breweries using actual user location
         for brewery in local_breweries:
-            # For now, calculate distance from Charlottesville center
-            # TODO: Add actual coordinates to each brewery in JSON
+            # For now, calculate distance from user's location to Charlottesville center
+            # TODO: Add actual coordinates to each brewery in JSON for precise distances
+            cville_center = (38.0293, -78.4767)  # Approximate center of Charlottesville
             brewery["distance"] = haversine_distance(lat, lng, cville_center[0], cville_center[1])
         
         # Sort local breweries by distance
@@ -334,8 +334,8 @@ async def chat(request: ChatRequest):
             function_to_call = available_functions[function_name]
             function_args = json.loads(tool_call.function.arguments)
             
-            # Pass location to the function if available
-            if user_location:
+            # Only pass location to functions that accept it
+            if user_location and function_name in ["get_breweries", "get_restaurants"]:
                 function_args["location"] = user_location
                 
             function_response = function_to_call(**function_args)
