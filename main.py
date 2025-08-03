@@ -5,10 +5,14 @@ import requests
 from bs4 import BeautifulSoup
 import html2text
 import math
+import logging
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict
+
+# ─── Logging Configuration ──────────────────────────────────────────────────────
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # ─── OpenAI Client ──────────────────────────────────────────────────────────────
 client = openai.OpenAI()
@@ -316,22 +320,26 @@ tools = [
 # ─── Chat endpoint (with tool-calling and location) ────────────────────────────
 @app.post("/chat")
 async def chat(request: ChatRequest):
+    logging.info(f"Received chat request: {request.message}")
     user_msg = request.message
     user_location = request.location
     
     if not user_msg:
+        logging.error("Missing 'message' field in request")
         raise HTTPException(status_code=400, detail="Missing 'message' field")
 
     # Create system prompt that includes location context
     location_context = ""
     if user_location:
         location_context = f" The user is currently at coordinates {user_location['lat']}, {user_location['lng']}."
+        logging.info(f"User location provided: {user_location}")
 
     messages = [
         {"role": "system", "content": f"You're Sam Calagione, a beer-savvy travel assistant with a swagger and sense of humor.{location_context} When suggesting places, prioritize those near the user's location. When users ask about what's on tap at a specific brewery, use the get_taplist_summary function with the brewery's taplist_url from your knowledge."},
         {"role": "user", "content": user_msg}
     ]
     
+    logging.info("Sending initial request to OpenAI...")
     response = client.chat.completions.create(
         model="gpt-4-1106-preview",
         messages=messages,
@@ -342,19 +350,23 @@ async def chat(request: ChatRequest):
     
     # Loop to handle chained tool calls
     while response_message.tool_calls:
+        logging.info("OpenAI response contains tool calls. Executing them...")
         messages.append(response_message)
         tool_calls = response_message.tool_calls
         
         for tool_call in tool_calls:
             function_name = tool_call.function.name
-            function_to_call = available_functions[function_name]
             function_args = json.loads(tool_call.function.arguments)
+            logging.info(f"Executing tool: {function_name} with args: {function_args}")
+            
+            function_to_call = available_functions[function_name]
             
             # Only pass location to functions that accept it
             if user_location and function_name in ["get_breweries", "get_restaurants"]:
                 function_args["location"] = user_location
                 
             function_response = function_to_call(**function_args)
+            logging.info(f"Received response from tool {function_name}")
             
             messages.append(
                 {
@@ -366,6 +378,7 @@ async def chat(request: ChatRequest):
             )
         
         # Make the next call to the model
+        logging.info("Sending follow-up request to OpenAI with tool responses...")
         response = client.chat.completions.create(
             model="gpt-4-1106-preview",
             messages=messages,
@@ -375,5 +388,6 @@ async def chat(request: ChatRequest):
         response_message = response.choices[0].message
 
     reply = response_message.content
+    logging.info(f"Final reply: {reply}")
 
     return {"reply": reply}
