@@ -2,19 +2,22 @@ import os
 import json
 import openai
 import requests
+from bs4 import BeautifulSoup
+import html2text
 import math
 import logging
+import inspect
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict
-from playwright.sync_api import sync_playwright
+from playwright.async_api import async_playwright
 
 # ─── Logging Configuration ──────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # ─── OpenAI Client ──────────────────────────────────────────────────────────────
-client = openai.OpenAI()
+client = openai.AsyncOpenAI()
 
 # ─── FastAPI App ────────────────────────────────────────────────────────────────
 app = FastAPI()
@@ -151,23 +154,23 @@ def get_google_places_restaurants(lat, lng, meal=None, radius=10000):
         return []
 
 # ─── Web Scraping for Brewery Details ──────────────────────────────────────────
-def get_taplist_summary(brewery: str, url: str):
+async def get_taplist_summary(brewery: str, url: str):
     """Fetch and summarize the current beers on tap from a brewery's website using Playwright"""
     logging.info(f"Fetching taplist for {brewery} from {url} using Playwright")
     
-    with sync_playwright() as p:
+    async with async_playwright() as p:
         try:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
             
             # Navigate to the page and wait for it to be mostly loaded
-            page.goto(url, timeout=20000, wait_until='domcontentloaded')
+            await page.goto(url, timeout=20000, wait_until='domcontentloaded')
             
             # Wait for a reasonable time to let dynamic content load
-            page.wait_for_timeout(5000) 
+            await page.wait_for_timeout(5000) 
             
-            content = page.content()
-            browser.close()
+            content = await page.content()
+            await browser.close()
 
             # Use BeautifulSoup to parse the dynamically loaded HTML
             soup = BeautifulSoup(content, 'html.parser')
@@ -186,7 +189,7 @@ def get_taplist_summary(brewery: str, url: str):
 
             # Ask GPT to extract & summarize
             logging.info("Sending snippet to OpenAI for summarization...")
-            summary_resp = client.chat.completions.create(
+            summary_resp = await client.chat.completions.create(
                 model="gpt-4",
                 messages=[
                     {
@@ -370,7 +373,7 @@ async def chat(request: ChatRequest):
     ]
     
     logging.info("Sending initial request to OpenAI...")
-    response = client.chat.completions.create(
+    response = await client.chat.completions.create(
         model="gpt-4-1106-preview",
         messages=messages,
         tools=tools,
@@ -393,8 +396,13 @@ async def chat(request: ChatRequest):
             
             if user_location and function_name in ["get_breweries", "get_restaurants"]:
                 function_args["location"] = user_location
-                
-            function_response = function_to_call(**function_args)
+            
+            # Check if the function is async and await it if so
+            if inspect.iscoroutinefunction(function_to_call):
+                function_response = await function_to_call(**function_args)
+            else:
+                function_response = function_to_call(**function_args)
+
             logging.info(f"Received response from tool {function_name}")
 
             # Requirement 1: Store the last mentioned brewery
@@ -418,7 +426,7 @@ async def chat(request: ChatRequest):
             )
         
         logging.info("Sending follow-up request to OpenAI with tool responses...")
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model="gpt-4-1106-preview",
             messages=messages,
             tools=tools,
