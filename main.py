@@ -154,12 +154,14 @@ def get_google_places_restaurants(lat, lng, meal=None, radius=10000):
 # ─── Web Scraping for Brewery Details ──────────────────────────────────────────
 def get_taplist_summary(brewery: str, url: str):
     """Fetch and summarize the current beers on tap from a brewery's website"""
+    logging.info(f"Fetching taplist for {brewery} from {url}")
     try:
         # 1) Fetch the page
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         resp = requests.get(url, headers=headers, timeout=10)
+        logging.info(f"Response status code: {resp.status_code}")
         
         # Convert HTML to plain text
         h = html2text.HTML2Text()
@@ -169,8 +171,10 @@ def get_taplist_summary(brewery: str, url: str):
         
         # Limit length to avoid token limits
         snippet = "\n".join(text.splitlines()[0:200])
+        logging.info(f"Extracted text snippet for summarization:\n{snippet[:500]}...") # Log first 500 chars
         
         # 2) Ask GPT to extract & summarize
+        logging.info("Sending snippet to OpenAI for summarization...")
         summary_resp = client.chat.completions.create(
             model="gpt-4",
             messages=[
@@ -186,6 +190,7 @@ def get_taplist_summary(brewery: str, url: str):
             max_tokens=500
         )
         summary = summary_resp.choices[0].message.content
+        logging.info(f"Received summary from OpenAI: {summary}")
         
         # 3) Return structured result
         return {
@@ -196,7 +201,7 @@ def get_taplist_summary(brewery: str, url: str):
         }
         
     except Exception as e:
-        print(f"Error fetching taplist for {brewery}: {e}")
+        logging.error(f"Error fetching taplist for {brewery}: {e}", exc_info=True)
         return {
             "brewery": brewery,
             "summary": f"Unable to fetch current tap list for {brewery}. You might want to check their website directly at {url}",
