@@ -317,6 +317,10 @@ tools = [
     }
 ]
 
+# ─── Session Storage (for demo purposes) ───────────────────────────────────────
+# In a real application, use a more robust session management solution.
+session_storage = {}
+
 # ─── Chat endpoint (with tool-calling and location) ────────────────────────────
 @app.post("/chat")
 async def chat(request: ChatRequest):
@@ -324,18 +328,29 @@ async def chat(request: ChatRequest):
     user_msg = request.message
     user_location = request.location
     
+    # Use a fixed session ID for this demo
+    session_id = "default_user" 
+    if session_id not in session_storage:
+        session_storage[session_id] = {}
+    session = session_storage[session_id]
+
     if not user_msg:
         logging.error("Missing 'message' field in request")
         raise HTTPException(status_code=400, detail="Missing 'message' field")
 
-    # Create system prompt that includes location context
+    # Create system prompt that includes location and session context
     location_context = ""
     if user_location:
         location_context = f" The user is currently at coordinates {user_location['lat']}, {user_location['lng']}."
         logging.info(f"User location provided: {user_location}")
+    
+    session_context = ""
+    if "last_brewery" in session:
+        last_brewery_name = session['last_brewery']['name']
+        session_context = f" The user was just asking about {last_brewery_name}. When they say 'there', 'that place', or ask about the taplist, they are likely referring to {last_brewery_name}."
 
     messages = [
-        {"role": "system", "content": f"You're Sam Calagione, a beer-savvy travel assistant with a swagger and sense of humor.{location_context} When suggesting places, prioritize those near the user's location. When users ask about what's on tap at a specific brewery, use the get_taplist_summary function with the brewery's taplist_url from your knowledge."},
+        {"role": "system", "content": f"You're Sam Calagione, a beer-savvy travel assistant with a swagger and sense of humor.{location_context}{session_context} When suggesting places, prioritize those near the user's location. When users ask about what's on tap at a specific brewery, use the get_taplist_summary function with the brewery's taplist_url from your knowledge."},
         {"role": "user", "content": user_msg}
     ]
     
@@ -361,12 +376,22 @@ async def chat(request: ChatRequest):
             
             function_to_call = available_functions[function_name]
             
-            # Only pass location to functions that accept it
             if user_location and function_name in ["get_breweries", "get_restaurants"]:
                 function_args["location"] = user_location
                 
             function_response = function_to_call(**function_args)
             logging.info(f"Received response from tool {function_name}")
+
+            # Requirement 1: Store the last mentioned brewery
+            if function_name == "get_breweries" and function_response:
+                # The first result is the most relevant one
+                relevant_brewery = function_response[0]
+                if "taplist_url" in relevant_brewery and relevant_brewery["taplist_url"]:
+                    session["last_brewery"] = {
+                        "name": relevant_brewery["name"],
+                        "url": relevant_brewery["taplist_url"]
+                    }
+                    logging.info(f"Stored last brewery in session: {session['last_brewery']['name']}")
             
             messages.append(
                 {
@@ -377,7 +402,6 @@ async def chat(request: ChatRequest):
                 }
             )
         
-        # Make the next call to the model
         logging.info("Sending follow-up request to OpenAI with tool responses...")
         response = client.chat.completions.create(
             model="gpt-4-1106-preview",
