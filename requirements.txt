@@ -3,5 +3,4 @@ uvicorn
 requests
 openai
 python-dotenv
-bs4
-html2text
+playwright

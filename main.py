@@ -2,14 +2,13 @@ import os
 import json
 import openai
 import requests
-from bs4 import BeautifulSoup
-import html2text
 import math
 import logging
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict
+from playwright.sync_api import sync_playwright
 
 # ─── Logging Configuration ──────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -153,62 +152,73 @@ def get_google_places_restaurants(lat, lng, meal=None, radius=10000):
 
 # ─── Web Scraping for Brewery Details ──────────────────────────────────────────
 def get_taplist_summary(brewery: str, url: str):
-    """Fetch and summarize the current beers on tap from a brewery's website"""
-    logging.info(f"Fetching taplist for {brewery} from {url}")
-    try:
-        # 1) Fetch the page
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        resp = requests.get(url, headers=headers, timeout=10)
-        logging.info(f"Response status code: {resp.status_code}")
-        
-        # Convert HTML to plain text
-        h = html2text.HTML2Text()
-        h.ignore_links = True
-        h.ignore_images = True
-        text = h.handle(resp.text)
-        
-        # Limit length to avoid token limits
-        snippet = "\n".join(text.splitlines()[0:200])
-        logging.info(f"Extracted text snippet for summarization:\n{snippet[:500]}...") # Log first 500 chars
-        
-        # 2) Ask GPT to extract & summarize
-        logging.info("Sending snippet to OpenAI for summarization...")
-        summary_resp = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {
-                    "role": "system", 
-                    "content": "You are a beer-savvy assistant. Given the brewery name and page text, extract the beers currently on tap with their style and a brief description. Format as a clear list. If no beer info is found, say so."
-                },
-                {
-                    "role": "user", 
-                    "content": f"Brewery: {brewery}\n\nPage text:\n{snippet}"
-                }
-            ],
-            max_tokens=500
-        )
-        summary = summary_resp.choices[0].message.content
-        logging.info(f"Received summary from OpenAI: {summary}")
-        
-        # 3) Return structured result
-        return {
-            "brewery": brewery,
-            "summary": summary,
-            "url": url,
-            "status": "success"
-        }
-        
-    except Exception as e:
-        logging.error(f"Error fetching taplist for {brewery}: {e}", exc_info=True)
-        return {
-            "brewery": brewery,
-            "summary": f"Unable to fetch current tap list for {brewery}. You might want to check their website directly at {url}",
-            "url": url,
-            "status": "error",
-            "error": str(e)
-        }
+    """Fetch and summarize the current beers on tap from a brewery's website using Playwright"""
+    logging.info(f"Fetching taplist for {brewery} from {url} using Playwright")
+    
+    with sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            
+            # Navigate to the page and wait for it to be mostly loaded
+            page.goto(url, timeout=20000, wait_until='domcontentloaded')
+            
+            # Wait for a reasonable time to let dynamic content load
+            page.wait_for_timeout(5000) 
+            
+            content = page.content()
+            browser.close()
+
+            # Use BeautifulSoup to parse the dynamically loaded HTML
+            soup = BeautifulSoup(content, 'html.parser')
+            
+            if soup.body:
+                text = soup.body.get_text(separator='\n', strip=True)
+            else:
+                logging.warning("Could not find body in Playwright-rendered page. Falling back to raw text.")
+                h = html2text.HTML2Text()
+                h.ignore_links = True
+                h.ignore_images = True
+                text = h.handle(content)
+
+            snippet = "\n".join(text.splitlines()[:400]) # Increased line limit further
+            logging.info(f"Extracted text snippet for summarization:\n{snippet[:500]}...")
+
+            # Ask GPT to extract & summarize
+            logging.info("Sending snippet to OpenAI for summarization...")
+            summary_resp = client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": "You are a beer-savvy assistant. Given the brewery name and page text, extract the beers currently on tap with their style and a brief description. Format as a clear list. If no beer info is found, say so."
+                    },
+                    {
+                        "role": "user", 
+                        "content": f"Brewery: {brewery}\n\nPage text:\n{snippet}"
+                    }
+                ],
+                max_tokens=1000 # Increased tokens for potentially longer lists
+            )
+            summary = summary_resp.choices[0].message.content
+            logging.info(f"Received summary from OpenAI: {summary}")
+            
+            return {
+                "brewery": brewery,
+                "summary": summary,
+                "url": url,
+                "status": "success"
+            }
+            
+        except Exception as e:
+            logging.error(f"Error fetching taplist for {brewery} with Playwright: {e}", exc_info=True)
+            return {
+                "brewery": brewery,
+                "summary": f"Unable to fetch current tap list for {brewery}. You might want to check their website directly at {url}",
+                "url": url,
+                "status": "error",
+                "error": str(e)
+            }
 
 # ─── Business Logic Functions ───────────────────────────────────────────────────
 def get_breweries(name: str = None, location: dict = None):
