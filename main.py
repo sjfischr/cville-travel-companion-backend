@@ -2,7 +2,6 @@ import os
 import json
 import openai
 import requests
-from bs4 import BeautifulSoup
 import html2text
 import math
 import logging
