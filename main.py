@@ -3,6 +3,7 @@ import json
 import openai
 import requests
 from bs4 import BeautifulSoup
+import html2text
 import math
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -88,65 +89,58 @@ def get_google_places_breweries(lat, lng, radius=10000):
         return []
 
 # ─── Web Scraping for Brewery Details ──────────────────────────────────────────
-def scrape_brewery_website(brewery_url):
-    """Scrape brewery website for current taps and food info"""
+def get_taplist_summary(brewery: str, url: str):
+    """Fetch and summarize the current beers on tap from a brewery's website"""
     try:
+        # 1) Fetch the page
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
-        response = requests.get(brewery_url, headers=headers, timeout=10)
-        soup = BeautifulSoup(response.content, 'html.parser')
+        resp = requests.get(url, headers=headers, timeout=10)
         
-        # Look for common brewery website patterns
-        tap_keywords = ['tap', 'beer', 'on tap', 'current', 'now pouring', 'draft']
-        food_keywords = ['food', 'menu', 'kitchen', 'food truck', 'eats']
+        # Convert HTML to plain text
+        h = html2text.HTML2Text()
+        h.ignore_links = True
+        h.ignore_images = True
+        text = h.handle(resp.text)
         
-        taps = []
-        food_info = []
+        # Limit length to avoid token limits
+        snippet = "\n".join(text.splitlines()[0:200])
         
-        # Search for tap information
-        for keyword in tap_keywords:
-            elements = soup.find_all(string=lambda text: text and keyword.lower() in text.lower())
-            for element in elements[:5]:  # Limit results
-                parent = element.parent if element.parent else element
-                if parent and len(str(parent).strip()) > 10:
-                    taps.append(str(parent).strip()[:200])
-        
-        # Search for food information
-        for keyword in food_keywords:
-            elements = soup.find_all(string=lambda text: text and keyword.lower() in text.lower())
-            for element in elements[:3]:  # Limit results
-                parent = element.parent if element.parent else element
-                if parent and len(str(parent).strip()) > 10:
-                    food_info.append(str(parent).strip()[:200])
-        
-        return {
-            "taps": taps[:10],  # Limit to 10 items
-            "food": food_info[:5],  # Limit to 5 items
-            "scraped": True
-        }
-    except Exception as e:
-        print(f"Scraping error for {brewery_url}: {e}")
-        return {"taps": [], "food": [], "scraped": False, "error": str(e)}
-
-# ─── GPT-4 Fallback for Brewery Details ────────────────────────────────────────
-def get_brewery_details_from_gpt(brewery_name):
-    """Use GPT-4 to get brewery details when scraping fails"""
-    try:
-        response = client.chat.completions.create(
+        # 2) Ask GPT to extract & summarize
+        summary_resp = client.chat.completions.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are a beer expert. Provide information about breweries including typical beer styles they make and any known food offerings. Keep responses concise."},
-                {"role": "user", "content": f"Tell me about {brewery_name} brewery - what types of beers do they typically have on tap and do they serve food?"}
+                {
+                    "role": "system", 
+                    "content": "You are a beer-savvy assistant. Given the brewery name and page text, extract the beers currently on tap with their style and a brief description. Format as a clear list. If no beer info is found, say so."
+                },
+                {
+                    "role": "user", 
+                    "content": f"Brewery: {brewery}\n\nPage text:\n{snippet}"
+                }
             ],
-            max_tokens=300
+            max_tokens=500
         )
+        summary = summary_resp.choices[0].message.content
+        
+        # 3) Return structured result
         return {
-            "gpt_info": response.choices[0].message.content,
-            "source": "gpt_fallback"
+            "brewery": brewery,
+            "summary": summary,
+            "url": url,
+            "status": "success"
         }
+        
     except Exception as e:
-        return {"gpt_info": f"Unable to get information about {brewery_name}", "source": "error"}
+        print(f"Error fetching taplist for {brewery}: {e}")
+        return {
+            "brewery": brewery,
+            "summary": f"Unable to fetch current tap list for {brewery}. You might want to check their website directly at {url}",
+            "url": url,
+            "status": "error",
+            "error": str(e)
+        }
 
 # ─── Business Logic Functions ───────────────────────────────────────────────────
 def get_breweries(name: str = None, location: dict = None):
@@ -181,73 +175,10 @@ def get_breweries(name: str = None, location: dict = None):
     
     return all_breweries[:15]  # Limit results
 
-def get_brewery_details(brewery_name: str):
-    """Get detailed information about a specific brewery including current taps and food"""
-    local_breweries = load_cville_breweries()
-    
-    # Find brewery in local data first
-    brewery_data = None
-    for brewery in local_breweries:
-        if brewery_name.lower() in brewery["name"].lower():
-            brewery_data = brewery
-            break
-    
-    if not brewery_data:
-        return {
-            "error": f"Brewery '{brewery_name}' not found in our database",
-            "suggestion": "Try asking for a list of breweries first"
-        }
-    
-    # Try to scrape the website
-    scrape_results = scrape_brewery_website(brewery_data["brewery_url"])
-    
-    result = {
-        "name": brewery_data["name"],
-        "address": brewery_data["address"],
-        "website": brewery_data["brewery_url"],
-        "untappd": brewery_data["untappd_url"]
-    }
-    
-    if scrape_results["scraped"]:
-        result.update({
-            "current_taps": scrape_results["taps"],
-            "food_info": scrape_results["food"],
-            "data_source": "scraped"
-        })
-    else:
-        # Fallback to GPT-4
-        gpt_info = get_brewery_details_from_gpt(brewery_data["name"])
-        result.update({
-            "general_info": gpt_info["gpt_info"],
-            "data_source": "gpt_fallback",
-            "scrape_error": scrape_results.get("error", "Unknown scraping error")
-        })
-    
-    return result
-
-def get_restaurants(meal: str = None, location: dict = None):
-    """List local restaurants or bars near the user's location"""
-    restaurants = [
-        {"name": "The Local", "meal": "dinner", "rating": 4.8, "url": "https://thelocal-cville.com/", "address": "824 Hinton Ave, Charlottesville, VA"},
-        {"name": "Mas Tapas", "meal": "dinner", "rating": 4.7, "url": "https://mastapas.com/", "address": "120 11th St NE, Charlottesville, VA"},
-        {"name": "Bodo's Bagels", "meal": "lunch", "rating": 4.9, "url": "https://bodosbagels.com/", "address": "1418 Emmet St N, Charlottesville, VA"},
-        {"name": "Citizen Burger Bar", "meal": "lunch", "rating": 4.3, "url": "https://citizenburgerbar.com/", "address": "212 E Main St, Charlottesville, VA"}
-    ]
-    
-    # TODO: Use Google Places API with location data
-    # if location:
-    #     lat, lng = location.get("lat"), location.get("lng")
-    #     # Call Google Places API here
-    #     pass
-    
-    if meal:
-        return [r for r in restaurants if r["meal"] == meal]
-    return restaurants
-
-# Map function names to actual functions
+# Remove the old get_brewery_details function and replace available_functions
 available_functions = {
     "get_breweries": get_breweries,
-    "get_brewery_details": get_brewery_details,
+    "get_taplist_summary": get_taplist_summary,
     "get_restaurants": get_restaurants,
 }
 
@@ -271,14 +202,15 @@ tools = [
     {
         "type": "function",
         "function": {
-            "name": "get_brewery_details",
-            "description": "Get detailed information about a specific brewery including current taps and food offerings",
+            "name": "get_taplist_summary",
+            "description": "Fetch and summarize the current beers on tap from a brewery's website",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "brewery_name": {"type": "string", "description": "Name of the brewery to get details for"}
+                    "brewery": {"type": "string", "description": "Brewery name"},
+                    "url": {"type": "string", "description": "Tap list page URL"}
                 },
-                "required": ["brewery_name"],
+                "required": ["brewery", "url"],
             }
         }
     },
@@ -290,6 +222,74 @@ tools = [
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "meal": {"type": "string", "enum": ["lunch", "dinner", "beer"]},
+                    "location": {"type": "object", "description": "User's current location with lat/lng"}
+                },
+                "required": [],
+            }
+        }
+    }
+]
+
+# ─── Chat endpoint (with tool-calling and location) ────────────────────────────
+@app.post("/chat")
+async def chat(request: ChatRequest):
+    user_msg = request.message
+    user_location = request.location
+    
+    if not user_msg:
+        raise HTTPException(status_code=400, detail="Missing 'message' field")
+
+    # Create system prompt that includes location context
+    location_context = ""
+    if user_location:
+        location_context = f" The user is currently at coordinates {user_location['lat']}, {user_location['lng']}."
+
+    messages = [
+        {"role": "system", "content": f"You're Sam Calagione, a beer-savvy travel assistant with a swagger and sense of humor.{location_context} When suggesting places, prioritize those near the user's location. When users ask about what's on tap at a specific brewery, use the get_taplist_summary function with the brewery's taplist_url from your knowledge."},
+        {"role": "user", "content": user_msg}
+    ]
+    
+    response = client.chat.completions.create(
+        model="gpt-4-1106-preview",
+        messages=messages,
+        tools=tools,
+        tool_choice="auto"
+    )
+    response_message = response.choices[0].message
+    tool_calls = response_message.tool_calls
+
+    if tool_calls:
+        messages.append(response_message)
+        for tool_call in tool_calls:
+            function_name = tool_call.function.name
+            function_to_call = available_functions[function_name]
+            function_args = json.loads(tool_call.function.arguments)
+            
+            # Only pass location to functions that accept it
+            if user_location and function_name in ["get_breweries", "get_restaurants"]:
+                function_args["location"] = user_location
+                
+            function_response = function_to_call(**function_args)
+            
+            messages.append(
+                {
+                    "tool_call_id": tool_call.id,
+                    "role": "tool",
+                    "name": function_name,
+                    "content": json.dumps(function_response),
+                }
+            )
+        
+        final_response = client.chat.completions.create(
+            model="gpt-4-1106-preview",
+            messages=messages,
+        )
+        reply = final_response.choices[0].message.content
+    else:
+        reply = response_message.content
+
+    return {"reply": reply}
                     "meal": {"type": "string", "enum": ["lunch", "dinner", "beer"]},
                     "location": {"type": "object", "description": "User's current location with lat/lng"}
                 },
