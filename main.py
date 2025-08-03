@@ -339,10 +339,12 @@ async def chat(request: ChatRequest):
         tool_choice="auto"
     )
     response_message = response.choices[0].message
-    tool_calls = response_message.tool_calls
-
-    if tool_calls:
+    
+    # Loop to handle chained tool calls
+    while response_message.tool_calls:
         messages.append(response_message)
+        tool_calls = response_message.tool_calls
+        
         for tool_call in tool_calls:
             function_name = tool_call.function.name
             function_to_call = available_functions[function_name]
@@ -363,12 +365,15 @@ async def chat(request: ChatRequest):
                 }
             )
         
-        final_response = client.chat.completions.create(
+        # Make the next call to the model
+        response = client.chat.completions.create(
             model="gpt-4-1106-preview",
             messages=messages,
+            tools=tools,
+            tool_choice="auto"
         )
-        reply = final_response.choices[0].message.content
-    else:
-        reply = response_message.content
+        response_message = response.choices[0].message
+
+    reply = response_message.content
 
     return {"reply": reply}
