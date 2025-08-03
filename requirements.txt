@@ -4,3 +4,5 @@ requests
 openai
 python-dotenv
 playwright
+bs4
+html2text

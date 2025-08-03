@@ -5,6 +5,8 @@ import requests
 import math
 import logging
 import inspect
+import html2text
+from bs4 import BeautifulSoup
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
