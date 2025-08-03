@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: taplist-ocr-service
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    plan: free

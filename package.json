@@ -1,0 +1,17 @@
+{
+  "name": "cycling-trip-companion-backend",
+  "version": "1.0.0",
+  "main": "dist/playwright_taplist_ocr.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/playwright_taplist_ocr.js"
+  },
+  "dependencies": {
+    "playwright": "^1.54.2",
+    "tesseract.js": "^4.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^18.7.18",
+    "typescript": "^4.8.4"
+  }
+}

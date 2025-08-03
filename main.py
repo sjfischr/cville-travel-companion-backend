@@ -5,6 +5,7 @@ import requests
 import math
 import logging
 import inspect
+import base64
 import html2text
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, Request, HTTPException
