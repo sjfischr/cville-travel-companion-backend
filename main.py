@@ -57,8 +57,9 @@ def haversine_distance(lat1, lon1, lat2, lon2):
 # ─── Google Places Integration ──────────────────────────────────────────────────
 def get_google_places_breweries(lat, lng, radius=10000):
     """Get breweries from Google Places API"""
-    api_key = os.getenv("GOOGLE_PLACES_API_KEY")
+    api_key = os.getenv("GOOGLE_API_KEY")  # Changed from GOOGLE_PLACES_API_KEY
     if not api_key:
+        print("Warning: No Google API key found")
         return []
     
     url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
@@ -74,6 +75,10 @@ def get_google_places_breweries(lat, lng, radius=10000):
         response = requests.get(url, params=params)
         data = response.json()
         
+        if data.get("status") != "OK":
+            print(f"Google Places API error: {data.get('status')} - {data.get('error_message', 'Unknown error')}")
+            return []
+        
         places = []
         for place in data.get("results", []):
             places.append({
@@ -81,6 +86,60 @@ def get_google_places_breweries(lat, lng, radius=10000):
                 "address": place.get("vicinity"),
                 "rating": place.get("rating"),
                 "place_id": place.get("place_id"),
+                "source": "google_places"
+            })
+        return places
+    except Exception as e:
+        print(f"Google Places API error: {e}")
+        return []
+
+def get_google_places_restaurants(lat, lng, meal=None, radius=10000):
+    """Get restaurants from Google Places API"""
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        print("Warning: No Google API key found")
+        return []
+    
+    # Map meal types to Google Places types/keywords
+    place_type = "restaurant"
+    keyword = ""
+    
+    if meal == "lunch":
+        keyword = "lunch restaurant cafe"
+    elif meal == "dinner":
+        keyword = "dinner restaurant"
+    elif meal == "beer":
+        keyword = "bar pub brewery"
+        place_type = "bar"
+    
+    url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+    params = {
+        "location": f"{lat},{lng}",
+        "radius": radius,
+        "type": place_type,
+        "key": api_key
+    }
+    
+    if keyword:
+        params["keyword"] = keyword
+    
+    try:
+        response = requests.get(url, params=params)
+        data = response.json()
+        
+        if data.get("status") != "OK":
+            print(f"Google Places API error: {data.get('status')} - {data.get('error_message', 'Unknown error')}")
+            return []
+        
+        places = []
+        for place in data.get("results", []):
+            places.append({
+                "name": place.get("name"),
+                "address": place.get("vicinity"),
+                "rating": place.get("rating"),
+                "price_level": place.get("price_level"),
+                "place_id": place.get("place_id"),
+                "meal": meal if meal else "general",
                 "source": "google_places"
             })
         return places
@@ -174,6 +233,29 @@ def get_breweries(name: str = None, location: dict = None):
         all_breweries = [b for b in all_breweries if name.lower() in b["name"].lower()]
     
     return all_breweries[:15]  # Limit results
+
+def get_restaurants(meal: str = None, location: dict = None):
+    """List local restaurants or bars near the user's location"""
+    if location:
+        lat, lng = location.get("lat"), location.get("lng")
+        restaurants = get_google_places_restaurants(lat, lng, meal)
+        
+        # Add distance to each restaurant
+        for restaurant in restaurants:
+            # For Google Places results, we don't have exact coordinates
+            # but we can use the general location for sorting
+            restaurant["distance"] = 0.5  # Placeholder - actual distance would need geocoding
+        
+        return restaurants[:15]  # Limit results
+    else:
+        # Fallback for when no location is provided
+        return [{
+            "name": "No location provided",
+            "address": "Please enable location services to find nearby restaurants",
+            "rating": 0,
+            "meal": meal if meal else "general",
+            "source": "error"
+        }]
 
 # Remove the old get_brewery_details function and replace available_functions
 available_functions = {
