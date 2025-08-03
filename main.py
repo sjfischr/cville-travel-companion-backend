@@ -2,7 +2,6 @@ import os
 import json
 import openai
 import requests
-import html2text
 import math
 import logging
 import inspect
