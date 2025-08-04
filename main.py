@@ -8,11 +8,14 @@ import inspect
 import base64
 import html2text
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict
 from playwright.async_api import async_playwright
+import speech_recognition as sr
+import tempfile, subprocess, io
+from fastapi.responses import StreamingResponse
 
 # ─── Logging Configuration ──────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -39,6 +42,9 @@ app.add_middleware(
 class ChatRequest(BaseModel):
     message: str
     location: Optional[dict] = None  # {"lat": float, "lng": float}
+
+class TTSRequest(BaseModel):
+    text: str
 
 # ─── Load Local Breweries Data ──────────────────────────────────────────────────
 def load_cville_breweries():
@@ -439,3 +445,45 @@ async def chat(request: ChatRequest):
     logging.info(f"Final reply: {reply}")
 
     return {"reply": reply}
+
+# speech-to-text endpoint
+@app.post("/stt")
+async def stt(audio: UploadFile = File(...)):
+    # 1) save incoming webm to temp
+    tmp_in = tempfile.NamedTemporaryFile(suffix=".webm", delete=False)
+    tmp_in.write(await audio.read()); tmp_in.flush()
+    # 2) convert to WAV via ffmpeg
+    wav_path = tmp_in.name + ".wav"
+    subprocess.run(["ffmpeg", "-i", tmp_in.name, wav_path], check=True)
+    # 3) run SpeechRecognition on the WAV
+    r = sr.Recognizer()
+    with sr.AudioFile(wav_path) as source:
+        audio_data = r.record(source)
+    try:
+        transcript = r.recognize_google(audio_data)
+    except sr.UnknownValueError:
+        transcript = ""
+    return {"transcript": transcript}
+
+# text-to-speech endpoint (ElevenLabs)
+@app.post("/speak")
+async def speak(req: TTSRequest):
+    logging.info(f"Generating speech via ElevenLabs for: {req.text}")
+    api_key = os.getenv("ELEVENLABS_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Missing ELEVENLABS_API_KEY")
+    voice_id = os.getenv("ELEVENLABS_VOICE_ID", "ELEVEN_VOICE_ID")
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+    payload = {
+        "text": req.text,
+        "model_id": "eleven_monolingual_v1"
+    }
+    headers = {
+        "xi-api-key": api_key,
+        "Content-Type": "application/json"
+    }
+    response = requests.post(url, json=payload, headers=headers)
+    if response.status_code != 200:
+        logging.error(f"ElevenLabs TTS error: {response.status_code} – {response.text}")
+        raise HTTPException(status_code=response.status_code, detail="TTS generation failed")
+    return StreamingResponse(io.BytesIO(response.content), media_type="audio/mpeg")
