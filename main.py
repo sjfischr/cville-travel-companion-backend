@@ -469,21 +469,36 @@ async def stt(audio: UploadFile = File(...)):
 @app.post("/speak")
 async def speak(req: TTSRequest):
     logging.info(f"Generating speech via ElevenLabs for: {req.text}")
-    api_key = os.getenv("ELEVENLABS_API_KEY")
+    api_key = os.getenv("ELEVEN_API_KEY")
     if not api_key:
-        raise HTTPException(status_code=500, detail="Missing ELEVENLABS_API_KEY")
-    voice_id = os.getenv("ELEVENLABS_VOICE_ID", "ELEVEN_VOICE_ID")
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+        raise HTTPException(status_code=500, detail="Missing ELEVEN_API_KEY")
+    voice_id = os.getenv("ELEVEN_VOICE_ID")
+    if not voice_id:
+        raise HTTPException(status_code=500, detail="Missing ELEVEN_VOICE_ID")
+
+    # build payload using the ElevenLabs schema
     payload = {
         "text": req.text,
-        "model_id": "eleven_monolingual_v1"
+        "voice_settings": {
+            "stability": float(os.getenv("ELEVEN_STABILITY", 0.75)),
+            "similarity_boost": float(os.getenv("ELEVEN_SIMILARITY", 0.75))
+        }
     }
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
     headers = {
         "xi-api-key": api_key,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Accept": "audio/mpeg"
     }
-    response = requests.post(url, json=payload, headers=headers)
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+    except Exception as e:
+        logging.error(f"Error calling ElevenLabs TTS: {e}", exc_info=True)
+        raise HTTPException(status_code=502, detail="Cannot reach TTS service")
+
     if response.status_code != 200:
         logging.error(f"ElevenLabs TTS error: {response.status_code} – {response.text}")
-        raise HTTPException(status_code=response.status_code, detail="TTS generation failed")
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+
     return StreamingResponse(io.BytesIO(response.content), media_type="audio/mpeg")
