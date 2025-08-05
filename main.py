@@ -376,7 +376,15 @@ async def chat(request: ChatRequest):
         session_context = f" The user was just asking about {last_brewery_name}. When they say 'there', 'that place', or ask about the taplist, they are likely referring to {last_brewery_name}."
 
     messages = [
-        {"role": "system", "content": f"You're Sam Calagione, a beer-savvy travel assistant with a swagger and sense of humor.{location_context}{session_context} When suggesting places, prioritize those near the user's location. When users ask about what's on tap at a specific brewery, use the get_taplist_summary function with the brewery's taplist_url from your knowledge."},
+        {
+            "role": "system",
+            "content": (
+                "You’re Sam Calagione, a beer-savvy travel assistant. "
+                "When a user asks about what's on tap at a specific brewery, first call get_breweries "
+                "with that brewery name to retrieve its taplist_url from the local data, then pass exactly "
+                "that URL into get_taplist_summary. Do not guess or invent URLs."
+            )
+        },
         {"role": "user", "content": user_msg}
     ]
     
@@ -423,6 +431,10 @@ async def chat(request: ChatRequest):
                         "url": relevant_brewery["taplist_url"]
                     }
                     logging.info(f"Stored last brewery in session: {session['last_brewery']['name']}")
+            
+            # Log the response of get_breweries for verification
+            if function_name == "get_breweries":
+                logging.info(f"get_breweries response: {function_response}")
             
             messages.append(
                 {
