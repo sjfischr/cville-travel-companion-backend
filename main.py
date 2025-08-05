@@ -28,7 +28,8 @@ app = FastAPI()
 origins = [
     "http://localhost:3000",
     "http://localhost:3001",
-    "https://cycling-trip-companion-frontend.onrender.com"
+    "https://cycling-trip-companion-frontend.onrender.com",
+    "https://cville-travel-companion-frontend-62.vercel.app"
 ]
 app.add_middleware(
     CORSMiddleware,
