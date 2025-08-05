@@ -476,6 +476,7 @@ async def stt(audio: UploadFile = File(...)):
         transcript = r.recognize_google(audio_data)
     except sr.UnknownValueError:
         transcript = ""
+    logging.info(f"STT transcript: '{transcript}'")
     return {"transcript": transcript}
 
 # text-to-speech endpoint (ElevenLabs)
