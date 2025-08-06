@@ -446,18 +446,38 @@ async def chat(request: ChatRequest):
             )
         
         logging.info("Sending follow-up request to OpenAI with tool responses...")
-        response = await client.chat.completions.create(
+        # This is the point where we will stream the response
+        async def stream_generator():
+            stream = await client.chat.completions.create(
+                model="gpt-4-1106-preview",
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+                stream=True
+            )
+            async for chunk in stream:
+                content = chunk.choices[0].delta.content or ""
+                if content:
+                    yield content
+        
+        return StreamingResponse(stream_generator(), media_type="text/plain")
+
+    # If no tool calls, stream the initial response
+    async def stream_generator_initial():
+        # To stream the initial response, we need to call the API again with stream=True
+        stream = await client.chat.completions.create(
             model="gpt-4-1106-preview",
             messages=messages,
             tools=tools,
-            tool_choice="auto"
+            tool_choice="auto",
+            stream=True
         )
-        response_message = response.choices[0].message
+        async for chunk in stream:
+            content = chunk.choices[0].delta.content or ""
+            if content:
+                yield content
 
-    reply = response_message.content
-    logging.info(f"Final reply: {reply}")
-
-    return {"reply": reply}
+    return StreamingResponse(stream_generator_initial(), media_type="text/plain")
 
 # speech-to-text endpoint
 @app.post("/stt")
