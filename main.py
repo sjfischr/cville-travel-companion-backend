@@ -455,13 +455,27 @@ async def chat(request: ChatRequest):
         response_message = response.choices[0].message
 
     # If we are here, no more tool calls are needed. Stream the final response.
+    # If the last tool call was get_taplist_summary, we can just use that summary directly.
+    last_tool_call = messages[-1] if messages and messages[-1].get("role") == "tool" else None
+    if last_tool_call and last_tool_call.get("name") == "get_taplist_summary":
+        summary_data = json.loads(last_tool_call["content"])
+        final_summary = summary_data.get("summary", "Could not get the taplist.")
+
+        async def direct_stream_generator():
+            yield final_summary
+        
+        return StreamingResponse(direct_stream_generator(), media_type="text/plain")
+
+
+    # Otherwise, let the model generate the final response based on context.
     async def stream_generator():
         stream = await client.chat.completions.create(
-            model="gpt-4-1106-preview",
+            model="gpt-4-turbo",
             messages=messages + [response_message],
             tools=tools,
             tool_choice="none", # Important: prevent further tool use
-            stream=True
+            stream=True,
+            max_tokens=2000
         )
         async for chunk in stream:
             content = chunk.choices[0].delta.content or ""
