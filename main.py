@@ -172,7 +172,7 @@ async def get_taplist_summary(brewery: str, url: str):
             page = await browser.new_page()
             
             # Navigate to the page and wait for it to be mostly loaded
-            await page.goto(url, timeout=20000, wait_until='domcontentloaded')
+            await page.goto(url, timeout=30000, wait_until='domcontentloaded')
             
             # Wait for a reasonable time to let dynamic content load
             await page.wait_for_timeout(5000) 
@@ -198,7 +198,7 @@ async def get_taplist_summary(brewery: str, url: str):
             # Ask GPT to extract & summarize
             logging.info("Sending snippet to OpenAI for summarization...")
             summary_resp = await client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4-turbo",
                 messages=[
                     {
                         "role": "system", 
@@ -209,7 +209,7 @@ async def get_taplist_summary(brewery: str, url: str):
                         "content": f"Brewery: {brewery}\n\nPage text:\n{snippet}"
                     }
                 ],
-                max_tokens=1000 # Increased tokens for potentially longer lists
+                max_tokens=1500 # Increased tokens for potentially longer lists
             )
             summary = summary_resp.choices[0].message.content
             logging.info(f"Received summary from OpenAI: {summary}")
