@@ -466,21 +466,40 @@ async def chat(request: ChatRequest):
         
         return StreamingResponse(direct_stream_generator(), media_type="text/plain")
 
-
-    # Otherwise, let the model generate the final response based on context.
+    # For all other cases (including brewery lists), let the model generate the final response.
     async def stream_generator():
         stream = await client.chat.completions.create(
             model="gpt-4-turbo",
-            messages=messages + [response_message],
+            messages=messages,
             tools=tools,
             tool_choice="none", # Important: prevent further tool use
             stream=True,
             max_tokens=2000
         )
+        
+        buffer = ""
+        chunk_size = 100  # Approximate token size for chunking
+        
         async for chunk in stream:
             content = chunk.choices[0].delta.content or ""
             if content:
-                yield content
+                buffer += content
+                
+                # Release chunks of approximately 100 tokens (rough estimation: ~4 chars per token)
+                while len(buffer) >= chunk_size * 4:
+                    # Find a good break point (space, punctuation)
+                    break_point = chunk_size * 4
+                    for i in range(break_point, max(0, break_point - 50), -1):
+                        if buffer[i] in ' .,!?;:\n':
+                            break_point = i + 1
+                            break
+                    
+                    yield buffer[:break_point]
+                    buffer = buffer[break_point:]
+        
+        # Yield any remaining content
+        if buffer:
+            yield buffer
 
     return StreamingResponse(stream_generator(), media_type="text/plain")
 
